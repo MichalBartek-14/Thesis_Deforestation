@@ -1,131 +1,180 @@
+import geopandas as gpd
 import rasterio
 from rasterio.features import shapes
-import geopandas as gpd
 import numpy as np
 from shapely.geometry import shape
+import shapely
+import warnings
+import pandas as pd
 
-#alternative script to analyse year 2024 - 7.12.2025
+""""
+description:
+This script will load the preprocessed forestry data stored as gpkg. file
+in which the driver of the forest disturbance is explicitlly mentioned under attribute "driver".
+Then the scripts vecotrizes and overlays the forestry polygons with the (vectoirzed) GFC forest disturbance alerts and assigns
+these forest disturbance occurances the explicit driver. 
+The conditions under which the drivers are assigned is included in the function postprocess().
+
+specifics of the project:
+a) Working with 2 years and thus 2 forestry files ()
+"""
+
 #testing out improvements:
-#          00) load two rasters of GFC and merge them into one dataset
-#           clip to the extent of slovakia)
+
 # ---      a) make a multipart dissolved feature with only the given driver
 #          a2) add buffer to the LHE polygons to make GFC also just outside of LHE
 #           # polygons be in the output
 #          b) if overlay between two drivers larger than 3 pixels dont assign any driver
-#          b) Conditions for the driver assigning
-#           c) Remove all smaller polygons than
-# ---      B)
-
+#           c) Remove all smaller polygons than 0.5ha
+# ------V2-----
 # ----------------------------------------------------------
-# 1. DATA LOADER
-# ----------------------------------------------------------
-def data_loader(path_forestry, path_GFC):
-    LHE_2024 = gpd.read_file(path_forestry)
-    GFC_2024 = path_GFC
-    print(LHE_2024._metadata)
+def data_loader(forestry_files: list, gfc_path: str, year: int):
+    """
+    forestry_files: list of GPKG files (e.g. 2023 + 2024)
+    gfc_path: processed GFC raster (already filtered + clipped)
+    year: GFC lossyear value to vectorize
+    """
 
-    gfc_vector = vectorize_gfc(GFC_2024, 24)
-    final = overlay(LHE_2024, gfc_vector)
+    # Load + merge forestry
+    LHE = gpd.GeoDataFrame(pd.concat(
+        [gpd.read_file(f) for f in forestry_files],
+        ignore_index=True
+    ))
+    LHE = LHE.to_crs("EPSG:3857")  # meter-based CRS
+
+    # Fix invalid geometries
+    LHE["geometry"] = LHE.buffer(0)
+
+    # Vectorize the GFC raster for the given year
+    gfc_vect = vectorize_gfc(gfc_path, year)
+    gfc_vect = gfc_vect.to_crs(LHE.crs)
+
+    # Run overlay + classification
+    final = overlay_and_process(LHE, gfc_vect)
+
     return final
+
 
 # ----------------------------------------------------------
 # 2. VECTORIZE GFC FOR A GIVEN YEAR
 # ----------------------------------------------------------
-def vectorize_gfc(GFC, year):
-    """
-    Reads raster, selects pixels with value==year,
-    converts them to polygons, returns GeoDataFrame.
-    """
-
-    with rasterio.open(GFC) as src:
+def vectorize_gfc(gfc_path, year):
+    with rasterio.open(gfc_path) as src:
         band = src.read(1)
-
-        # mask only the year of deforestation
         mask = (band == year)
 
-        # polygonize raster regions where mask is True
-        results = (
-            {'properties': {'year': year}, 'geometry': shape(geom)}
+        polygons = [
+            {"properties": {"year": year}, "geometry": shape(geom)}
             for geom, val in shapes(band, mask=mask, transform=src.transform)
             if val == year
-        )
+        ]
 
-        gdf = gpd.GeoDataFrame.from_features(results, crs=src.crs)
+    return gpd.GeoDataFrame.from_features(polygons, crs=src.crs)
 
-    return gdf
 
 # ----------------------------------------------------------
-# 3. CLIP GFC POLYGONS WITH LHE FORESTRY AREAS
+# 3. OVERLAY + IMPROVEMENTS + CLASSIFICATION
 # ----------------------------------------------------------
-def overlay(LHE, gfc_gdf):
+def overlay_and_process(LHE, gfc):
 
-    # Ensure identical CRS
-    LHE = LHE.to_crs("EPSG:4326")
-    gfc_gdf = gfc_gdf.to_crs("EPSG:4326")
+    # ---------------------------
+    # A) Dissolve forestry by "driver"
+    # ---------------------------
+    if "driver" not in LHE.columns:
+        LHE["driver"] = LHE["Príčina náhodnej ťažby"].fillna("")
 
-    # convert form to gdf so algorithm can make buffer
-    #Buffer the forestry polygons
-    #buffered_forestry = LHE.buffer(50)
+    dissolved = LHE.dissolve(by="driver")
 
-    # Clip GFC polygons by forestry polygons
-    clipped = gpd.overlay(gfc_gdf, buffered_forestry, how="intersection")
+    # ---------------------------
+    # B) Add buffer (25m default)
+    # ---------------------------
+    dissolved["geometry"] = dissolved.buffer(25)
 
-    # Add driver column (empty now, filled in post_process)
-    clipped["driver"] = None
+    # ---------------------------
+    # C) Overlay GFC with forestry
+    # ---------------------------
+    clipped = gpd.overlay(gfc, dissolved, how="intersection")
 
-    # Run final classification
+    # ---------------------------
+    # D) Driver classification logic
+    # ---------------------------
     clipped = post_process(clipped)
 
-    #remove small polygons
-    if clipped.geometry < 20:
-        clipped["driver"] = "small"
-        clipped.drop("small")
+    # ---------------------------
+    # E) Remove polygons < 0.5 ha (5000 m²)
+    # ---------------------------
+    clipped = clipped[clipped.area >= 5000]
 
+    # ---------------------------
+    # F) If intersecting >1 driver for same GFC → remove driver
+    # ---------------------------
+    clipped = remove_conflicts(clipped)
 
     return clipped
 
+
 # ----------------------------------------------------------
-# 4. POST-PROCESSING: CLASSIFICATION OF DRIVERS
+# 4. CLASSIFICATION BASED ON FORESTRY ATTRIBUTES
 # ----------------------------------------------------------
 def post_process(gdf):
-    """
-    Assigns attribute 'driver' based on forestry attributes:
-        - If "Pricina nahodnej tazby" contains "LS" → driver = "bb"
-        - If Druh ťažby == "OU" AND "Pricina nahodnej tazby" is empty → driver = "fm"
-        - If "Pricina nahodnej tazby" == "VT" → driver = "wt"
-    """
 
-    # clean input strings
     gdf["Príčina náhodnej ťažby"] = gdf["Príčina náhodnej ťažby"].fillna("")
     gdf["Druh ťažby"] = gdf["Druh ťažby"].fillna("")
 
-    # 1. LS → bb
-    mask_bb = gdf["Príčina náhodnej ťažby"].str.contains("LS", case=False, na=False)
+    # VT → windthrow (wt)
+    mask_wt = gdf["Príčina náhodnej ťažby"].str.contains("VT", case=False)
+    gdf.loc[mask_wt, "driver"] = "wt"
+
+    # LS → bark beetle (bb)
+    mask_bb = gdf["Príčina náhodnej ťažby"].str.contains("LS", case=False)
     gdf.loc[mask_bb, "driver"] = "bb"
 
-    # 2. OU + empty cause → fm
+    # OU + empty cause → forest management (fm)
     mask_fm = (gdf["Druh ťažby"] == "OU") & (gdf["Príčina náhodnej ťažby"].str.strip() == "")
     gdf.loc[mask_fm, "driver"] = "fm"
 
-    # 3. VT → wt
-    mask_wt = gdf["Príčina náhodnej ťažby"].str.contains("VT", case=False, na=False)
-    gdf.loc[mask_wt, "driver"] = "wt"
+    # Others: keep original cause
+    other = ~(mask_bb | mask_fm | mask_wt)
+    gdf.loc[other, "driver"] = gdf.loc[other, "Príčina náhodnej ťažby"]
 
     return gdf
 
+
 # ----------------------------------------------------------
-# 5. SAVE RESULT
+# 5. REMOVE DRIVER ASSIGNMENT IF >1 DRIVER INTERSECTS
+# ----------------------------------------------------------
+def remove_conflicts(gdf):
+
+    # Count drivers per GFC polygon
+    grouped = gdf.groupby("geometry")["driver"].nunique()
+
+    conflicting_geoms = grouped[grouped > 1].index
+
+    gdf.loc[gdf["geometry"].isin(conflicting_geoms), "driver"] = None
+
+    return gdf
+
+
+# ----------------------------------------------------------
+# 6. SAVE RESULT
 # ----------------------------------------------------------
 def save_output(gdf, out_path):
-    """
-    Saves the final geopackage with driver + original LHE attributes.
-    """
     gdf.to_file(out_path, driver="GPKG")
-
-final_gpkg = data_loader(r"C:\Users\misko\Documents\Michal\Master\A_Thesis\Actual_Scripts\Deforestation_Thesis\Forestry\LHE_2024_Slovakia_deforestation_events.gpkg",
-            r"C:\Users\misko\Documents\Michal\Master\A_Thesis\Data\Labelling\Hansen_GFC-2024-v1.12_lossyear_50N_010E.tif")
-#save_output(final_gpkg, "AUTO_Forest_Disturbance_events_2024.gpkg")
+    print(f"Saved: {out_path}")
 
 
+# ----------------------------------------------------------
+# 7. RUN
+# ----------------------------------------------------------
+final_gpkg = data_loader(
+    forestry_files=[
+        #r"C:/Users/misko/Documents/Michal/Master/A_Thesis/Actual_Scripts/Deforestation_Thesis/Forestry/LHE_2023_Slovakia_deforestation_events.gpkg",
+        r"C:/Users/misko/Documents/Michal/Master/A_Thesis/Actual_Scripts/Deforestation_Thesis/Forestry/LHE_2024_Slovakia_deforestation_events.gpkg"
+    ],
+    gfc_path=r"C:\Users\misko\Documents\Michal\Master\A_Thesis\Actual_Scripts\Deforestation_Thesis\outputs\Processed_GFC_001b.tif",
+    year=24
+)
+
+save_output(final_gpkg, "AUTO_Forest_Disturbance_events_2024.gpkg")
 
 
