@@ -16,10 +16,10 @@ these forest disturbance occurances the explicit driver.
 The conditions under which the drivers are assigned is included in the function postprocess().
 
 specifics of the project:
-a) Working with 2 years and thus 2 forestry files ()
+a) the user has to specify the concrete year and the input forestry polygons
 """
 
-#testing out improvements:
+# testing out improvements:
 
 # ---      a) make a multipart dissolved feature with only the given driver
 #          a2) add buffer to the LHE polygons to make GFC also just outside of LHE
@@ -168,13 +168,13 @@ def save_output(gdf, out_path):
 # ----------------------------------------------------------
 final_gpkg = data_loader(
     forestry_files=[
-        #r"C:/Users/misko/Documents/Michal/Master/A_Thesis/Actual_Scripts/Deforestation_Thesis/Forestry/LHE_2023_Slovakia_deforestation_events.gpkg",
-        r"C:/Users/misko/Documents/Michal/Master/A_Thesis/Actual_Scripts/Deforestation_Thesis/Forestry/LHE_2024_Slovakia_deforestation_events.gpkg"
+        r"C:/Users/misko/Documents/Michal/Master/A_Thesis/Actual_Scripts/Deforestation_Thesis/Forestry/LHE_2023_Slovakia_deforestation_events.gpkg",
+        #r"C:/Users/misko/Documents/Michal/Master/A_Thesis/Actual_Scripts/Deforestation_Thesis/Forestry/LHE_2024_Slovakia_deforestation_events.gpkg"
     ],
     gfc_path=r"C:\Users\misko\Documents\Michal\Master\A_Thesis\Actual_Scripts\Deforestation_Thesis\outputs\Processed_GFC_001b.tif",
-    year=24
+    year=23
 )
 
-save_output(final_gpkg, "AUTO_Forest_Disturbance_events_2024.gpkg")
+save_output(final_gpkg, "AUTO_Forest_Disturbance_events_2023x.gpkg")
 
 

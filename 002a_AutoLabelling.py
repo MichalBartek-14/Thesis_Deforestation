@@ -6,9 +6,7 @@ from shapely.geometry import shape
 
 #working script 28.11.2025
 #possible improvements:
-# ---      a) add buffer to the LHE polygons (if they are not close to each other) to make GFC also just outside of LHE
-# polygons be in the output
-# ---      B)
+
 
 # ----------------------------------------------------------
 # 1. DATA LOADER

@@ -38,10 +38,10 @@ forest_boundaries_gdf = gpd.read_file(forest_boundaries_path)[usecols_gdf]
 logging_df = pd.read_excel(logging_table_path, usecols=usecols_df)
 
 #To do:
-# 1 retrieve only deforestation events with some value above 1 for 'holina
+# 1 retrieve only deforestation events with some value above 0.5ha for 'holina
 # 2 Keep only desired data columns
 # 3 Join this table information to the spatially explicit forest_boundaries_path
-    #Join based on KPL in shapefile - 'Kod PLanu in excel\
+    # Join based on KPL in shapefile - 'Kod PLanu in excel\
     # based on DC in shp and Dielec in excel
     # based on and CP or Ciastkova plocha in excel
 # 4 output should be a shapefile where one patch up to the division of CP should get the records of the excel

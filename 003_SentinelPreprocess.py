@@ -3,6 +3,14 @@ import ee
 import geemap
 import math
 
+
+"""
+description: 
+function that loads the date to ee format
+production of the sentinel 1 and sentinel 2 composites 
+This is done from the EE environment images
+"""
+
 def convert_dec_to_eedate(number):
 
     '''
