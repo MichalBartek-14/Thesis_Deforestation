@@ -6,6 +6,10 @@ import geopandas as gpd
 """
 description: 
 last modified: 6.2.2026
+* used for the additional AOIs drawn to offer more generalisation power 
+9.3.2026 -changes:
+- AOI_id changed += 10 
+- input path for the AOI extent
 function that loads the date to ee format
 production of the sentinel 1 and sentinel 2 composites 
 This is done from the EE environment images and saves composites to drive
@@ -19,7 +23,8 @@ Modified to:
 """
 
 # aoi_gdf = gpd.read_file("test4_2024_defo_bboxes.gpkg")
-aoi_gdf = gpd.read_file("00b_manual2024_defo_AOIs.gpkg")
+#aoi_gdf = gpd.read_file("00b_manual2024_defo_AOIs.gpkg")
+aoi_gdf = gpd.read_file("00c_manual2024_added.gpkg")
 
 if aoi_gdf.crs.to_epsg() != 4326:
     aoi_gdf = aoi_gdf.to_crs(4326)
@@ -612,7 +617,8 @@ def scale_image_s2(image):
 for aoi_obj in ee_aois:
     aoi = aoi_obj["geometry"]
     aoi_id = aoi_obj["id"]
-
+    #for extra AOIs run
+    aoi_id += 10
     for year in YEARS:
         for month in MONTH_NUMBERS:
             start_date, end_date = get_monthly_window(year, month)

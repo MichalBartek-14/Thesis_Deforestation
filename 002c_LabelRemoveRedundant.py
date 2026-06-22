@@ -167,7 +167,7 @@ if __name__ == "__main__":
     if os.path.exists(manual_2023_path) and os.path.exists(auto_2023_path):
         manual_2023, auto_2023 = data_loader(manual_2023_path, auto_2023_path)
         final_2023 = overlay(manual_2023, auto_2023)
-        save(final_2023, output_2023)
+        #save(final_2023, output_2023)
     else:
         print("⚠ Skipping 2023 - input files not found")
         if not os.path.exists(manual_2023_path):
@@ -185,7 +185,7 @@ if __name__ == "__main__":
         final_2024 = overlay(manual_2024, auto_2024)
         #the column naming had to be adjusted for year 2024 since it includes 2 columns of the same name.
         final_2024 = final_2024.rename(columns={"year": "year_lower"})
-        save(final_2024, output_2024)
+        #save(final_2024, output_2024)
     else:
         print("Skipping 2024 - input files not found")
         if not os.path.exists(manual_2024_path):
